@@ -15,7 +15,6 @@ interface MotionState {
     velocity: {
         groundSpeed: number;
         verticalSpeed: number;
-        groundTrack: number;
     };
     lastUpdateTime: number;
 }
@@ -80,7 +79,6 @@ export class FlightMotionControl implements IControl {
                 velocity: {
                     groundSpeed: 0,
                     verticalSpeed: 0,
-                    groundTrack: 0
                 },
                 lastUpdateTime: this.now
             };
@@ -139,7 +137,6 @@ export class FlightMotionControl implements IControl {
         lat: number;
         lng: number;
         elevation: number;
-        groundTrack: number;
         flightHeading: number;
         groundSpeed: number;
         verticalSpeed: number;
@@ -168,7 +165,6 @@ export class FlightMotionControl implements IControl {
             velocity: {
                 groundSpeed: state.groundSpeed,
                 verticalSpeed: state.verticalSpeed,
-                groundTrack: state.groundTrack
             },
             lastUpdateTime: now
         };
@@ -231,7 +227,6 @@ export class FlightMotionControl implements IControl {
             velocity: {
                 groundSpeed: Number(state.velocity.groundSpeed.toFixed(6)),
                 verticalSpeed: Number(state.velocity.verticalSpeed.toFixed(6)),
-                groundTrack: Number(state.velocity.groundTrack.toFixed(6))
             },
             lastUpdateTime: state.lastUpdateTime
         };
