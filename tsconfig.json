@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+     "target": "ES2021",
+     "module": "ESNext",
+     "moduleResolution": "node",
+     "resolveJsonModule": true,
+     "allowJs": true,
+     "checkJs": true,
+     "declaration": true,
+     "outDir": "dist",
+     "isolatedModules": false,
+     "allowSyntheticDefaultImports": true,
+     "esModuleInterop": true,
+     "forceConsistentCasingInFileNames": true,
+     "strict": false,
+     "skipLibCheck": true
+  },
+  "include": [
+     "src/**/*.ts"
+  ],
+  "exclude": [
+     "node_modules",
+  ]
+}

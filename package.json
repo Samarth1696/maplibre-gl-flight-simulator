@@ -1,0 +1,38 @@
+{
+  "name": "maplibre-gl-flight-simulator",
+  "version": "1.0.0",
+  "description": "A MapLibre GL JS plugin that provides aircraft motion control and simulation, enabling users to create interactive 3D flight experiences within MapLibre maps.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "files": [
+    "dist/**/*"
+  ],
+  "keywords": [ "maplibre", "maplibre-gl", "plugin", "flight", "simulator", "3D", "typescript" ],
+  "author": {
+    "name": "Samarth Otiya",
+    "email": "samarthrobo03@gmail.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Samarth1696/maplibre-gl-flight-simulator"
+  },
+  "bugs": {
+    "url": "https://github.com/Samarth1696/maplibre-gl-flight-simulator/issues"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "peerDependencies": {
+    "maplibre-gl": "^5.0.0-pre.4"
+  },
+  "dependencies": {
+    "maplibre-gl": "^5.0.0-pre.4"
+  }
+}
