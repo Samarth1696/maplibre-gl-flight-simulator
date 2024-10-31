@@ -14,7 +14,13 @@
      "esModuleInterop": true,
      "forceConsistentCasingInFileNames": true,
      "strict": false,
-     "skipLibCheck": true
+     "skipLibCheck": true,
+     "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
+     "types": ["maplibre-gl"]
   },
   "include": [
      "src/**/*.ts"

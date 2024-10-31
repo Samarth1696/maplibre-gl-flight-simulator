@@ -1,5 +1,10 @@
-import {earthRadius, LngLat} from 'maplibre-gl/src/geo/lng_lat';
-import {type IControl, type Map} from 'maplibre-gl';
+import {type IControl, type Map, LngLat} from 'maplibre-gl';
+
+/*
+* Approximate radius of the earth in meters.
+* Uses the WGS-84 approximation: https://en.wikipedia.org/wiki/World_Geodetic_System#WGS84
+*/
+const earthRadius = 6371008.8;
 
 interface MotionState {
     position: {

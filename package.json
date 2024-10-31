@@ -2,13 +2,14 @@
   "name": "maplibre-gl-flight-simulator",
   "version": "1.0.0",
   "description": "A MapLibre GL JS plugin that provides aircraft motion control and simulation, enabling users to create interactive 3D flight experiences within MapLibre maps.",
-  "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/maplibre-gl-flight-simulator.esm.js",
+  "module": "dist/maplibre-gl-flight-simulator.umd.js",
+  "types": "types/index.d.ts",
   "scripts": {
-    "build": "tsc",
-    "prepublishOnly": "npm run build",
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "clean": "rm -rf dist",
+  "build:types": "tsc --emitDeclarationOnly",
+  "build": "npm run clean && npm run build:types && webpack --config webpack.config.js",
+  "build:watch": "webpack --watch --config webpack.config.js"
   },
   "files": [
     "dist/**/*"
@@ -27,12 +28,23 @@
     "url": "https://github.com/Samarth1696/maplibre-gl-flight-simulator/issues"
   },
   "devDependencies": {
-    "typescript": "^5.6.3"
+    "@types/maplibre-gl": "^1.13.2",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.6.3",
+    "webpack": "^5.95.0",
+    "webpack-cli": "^5.1.4"
   },
   "peerDependencies": {
     "maplibre-gl": "^5.0.0-pre.4"
   },
   "dependencies": {
     "maplibre-gl": "^5.0.0-pre.4"
+  },
+  "exports": {
+  ".": {
+    "import": "./dist/maplibre-gl-flight-simulator.esm.js",
+    "require": "./dist/maplibre-gl-flight-simulator.umd.js",
+    "types": "./dist/types/index.d.ts"
   }
+ }
 }
