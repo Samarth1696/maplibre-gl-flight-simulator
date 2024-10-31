@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-     "target": "ES2021",
+     "target": "ES2016",
      "module": "ESNext",
      "moduleResolution": "node",
      "resolveJsonModule": true,
@@ -8,6 +8,7 @@
      "checkJs": true,
      "declaration": true,
      "outDir": "dist",
+     "declarationDir": "types",
      "isolatedModules": false,
      "allowSyntheticDefaultImports": true,
      "esModuleInterop": true,
