@@ -4,12 +4,10 @@ const path = require('path');
 const umdConfig = {
     entry: './src/index.ts',
     output: {
-        filename: 'maplibre-gl-flight-simulator.umd.js',
+        filename: 'maplibre-gl-flight-simulator.js',
         path: path.resolve(__dirname, 'dist'),
-        library: {
-            name: 'maplibre-gl-flight-simulator',
-            type: 'umd',
-        },
+        library: 'MaplibreGlFlightSimulator',
+        libraryTarget: 'umd',
         globalObject: 'this',
     },
     resolve: {
@@ -29,25 +27,22 @@ const umdConfig = {
             commonjs: 'maplibre-gl',
             commonjs2: 'maplibre-gl',
             amd: 'maplibre-gl',
-            root: 'maplibregl',
-        },
+            root: 'maplibregl'
+        }
     },
     mode: 'production',
 };
 
 /** @type {import('webpack').Configuration} */
-const esmConfig = {
+const devConfig = {
+    devtool: 'eval-source-map',
     entry: './src/index.ts',
     output: {
-        filename: 'maplibre-gl-flight-simulator.esm.js',
+        filename: 'maplibre-gl-flight-simulator-dev.js',
         path: path.resolve(__dirname, 'dist'),
-        library: {
-            type: 'module',
-        },
-        module: true,
-    },
-    experiments: {
-        outputModule: true,
+        library: 'MaplibreGlFlightSimulator',
+        libraryTarget: 'umd',
+        globalObject: 'this',
     },
     resolve: {
         extensions: ['.ts', '.js'],
@@ -62,10 +57,15 @@ const esmConfig = {
         ],
     },
     externals: {
-        'maplibre-gl': 'maplibre-gl',
+        'maplibre-gl': {
+            commonjs: 'maplibre-gl',
+            commonjs2: 'maplibre-gl',
+            amd: 'maplibre-gl',
+            root: 'maplibregl'
+        }
     },
-    mode: 'production',
+    mode: 'development',
 };
 
-module.exports = [umdConfig, esmConfig];
+module.exports = [umdConfig, devConfig];
 
