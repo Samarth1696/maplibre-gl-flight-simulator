@@ -1,4 +1,4 @@
-import {type IControl, type Map, LngLat} from 'maplibre-gl';
+import { type IControl, type Map, LngLat } from 'maplibre-gl';
 
 /*
 * Approximate radius of the earth in meters.
@@ -40,9 +40,7 @@ interface CameraMode {
 
 export class FlightMotionControl implements IControl {
 
-    now = typeof performance !== 'undefined' && performance && performance.now ?
-        performance.now.bind(performance) :
-        Date.now.bind(Date);
+    now = (typeof performance !== 'undefined' && performance.now) ? performance.now.bind(performance) : Date.now;
 
     _map: Map;
     _container: HTMLElement;
@@ -85,7 +83,7 @@ export class FlightMotionControl implements IControl {
                     groundSpeed: 0,
                     verticalSpeed: 0,
                 },
-                lastUpdateTime: this.now
+                lastUpdateTime: this.now()
             };
         }
 
@@ -139,37 +137,117 @@ export class FlightMotionControl implements IControl {
     }
 
     updateFlightState(state: {
-        lat: number;
-        lng: number;
-        elevation: number;
-        flightHeading: number;
-        groundSpeed: number;
-        verticalSpeed: number;
-        pitchAttitude: number;
-        rollAttitude: number;
+        lat?: number;
+        lng?: number;
+        elevation?: number;
+        flightHeading?: number;
+        groundSpeed?: number;
+        verticalSpeed?: number;
+        pitchAttitude?: number;
+        rollAttitude?: number;
     }) {
-        const now = this.now;
+        const now = this.now();
         const deltaTime = this._currentState ?
             (now - this._currentState.lastUpdateTime) / 1000 : 0;
 
         // Store previous state
         this._previousState = this._currentState;
 
-        // Update current state
+        // If we don't have a current state, we need minimum values to start
+        if (!this._currentState) {
+            this._currentState = {
+                position: {
+                    lat: state.lat || 0,
+                    lng: state.lng || 0,
+                    altitude: state.elevation || 0
+                },
+                attitude: {
+                    heading: state.flightHeading || 0,
+                    pitch: state.pitchAttitude || 0,
+                    roll: state.rollAttitude || 0
+                },
+                velocity: {
+                    groundSpeed: state.groundSpeed || 0,
+                    verticalSpeed: state.verticalSpeed || 0,
+                },
+                lastUpdateTime: now
+            };
+            return;
+        }
+
+        // Calculate missing values based on previous state and provided values
+        const position = {
+            lat: state.lat ?? this._currentState.position.lat,
+            lng: state.lng ?? this._currentState.position.lng,
+            altitude: state.elevation
+        };
+
+        // If elevation is not provided but verticalSpeed is available,
+        // calculate new elevation based on vertical speed and time
+        if (position.altitude === undefined && state.verticalSpeed !== undefined) {
+            const verticalDelta = state.verticalSpeed * deltaTime;
+            position.altitude = Number((this._currentState.position.altitude + verticalDelta).toFixed(6));
+        } else if (position.altitude === undefined) {
+            position.altitude = this._currentState.position.altitude;
+        }
+
+        // If verticalSpeed is missing but elevation changed, calculate it
+        let verticalSpeed = state.verticalSpeed;
+        if (verticalSpeed === undefined && state.elevation !== undefined) {
+            verticalSpeed = Number(((position.altitude - this._currentState.position.altitude) / deltaTime).toFixed(6));
+        } else if (verticalSpeed === undefined) {
+            verticalSpeed = this._currentState.velocity.verticalSpeed;
+        }
+
+        // If groundSpeed is missing but we have position changes, calculate it
+        let groundSpeed = state.groundSpeed;
+        if (groundSpeed === undefined && (state.lat !== undefined || state.lng !== undefined)) {
+            const metersPerDegree = 111111;
+            const dx = Number(((position.lng - this._currentState.position.lng) *
+                Math.cos(position.lat * Math.PI / 180) * metersPerDegree).toFixed(6));
+            const dy = Number(((position.lat - this._currentState.position.lat) * metersPerDegree).toFixed(6));
+            groundSpeed = Number((Math.sqrt(dx * dx + dy * dy) / deltaTime).toFixed(6));
+        } else if (groundSpeed === undefined) {
+            groundSpeed = this._currentState.velocity.groundSpeed;
+        }
+
+        // Calculate or maintain heading values
+        let flightHeading = state.flightHeading;
+        if (flightHeading === undefined && (state.lat !== undefined || state.lng !== undefined)) {
+            // Calculate heading from position change
+            const dx = position.lng - this._currentState.position.lng;
+            const dy = position.lat - this._currentState.position.lat;
+            flightHeading = Number((((Math.atan2(dx, dy) * 180 / Math.PI) + 360) % 360).toFixed(6));
+        } else if (flightHeading === undefined) {
+            flightHeading = this._currentState.attitude.heading;
+        }
+
+        // Calculate or maintain pitch
+        let pitchAttitude = state.pitchAttitude;
+        if (pitchAttitude === undefined && verticalSpeed !== undefined && groundSpeed !== undefined) {
+            // Calculate pitch from vertical and ground speed
+            pitchAttitude = Number((Math.atan2(verticalSpeed, groundSpeed) * 180 / Math.PI).toFixed(6));
+        } else if (pitchAttitude === undefined) {
+            pitchAttitude = this._currentState.attitude.pitch;
+        }
+
+        // Maintain roll if not provided
+        const rollAttitude = state.rollAttitude ?? this._currentState.attitude.roll;
+
         this._currentState = {
             position: {
-                lat: state.lat,
-                lng: state.lng,
-                altitude: state.elevation
+                lat: Number(position.lat.toFixed(6)),
+                lng: Number(position.lng.toFixed(6)),
+                altitude: Number(position.altitude.toFixed(6))
             },
             attitude: {
-                heading: state.flightHeading,
-                pitch: state.pitchAttitude,
-                roll: state.rollAttitude
+                heading: Number(flightHeading.toFixed(6)),
+                pitch: Number(pitchAttitude.toFixed(6)),
+                roll: Number(rollAttitude.toFixed(6))
             },
             velocity: {
-                groundSpeed: state.groundSpeed,
-                verticalSpeed: state.verticalSpeed,
+                groundSpeed: Number(groundSpeed.toFixed(6)),
+                verticalSpeed: Number(verticalSpeed.toFixed(6)),
             },
             lastUpdateTime: now
         };
@@ -183,7 +261,7 @@ export class FlightMotionControl implements IControl {
     _updateCameraFromState(): void {
         if (!this._currentState || !this._map) return;
 
-        const now = this.now;
+        const now = this.now();
         const deltaTime = (now - this._currentState.lastUpdateTime) / 1000;
 
         // Predict current position based on last known velocity
@@ -192,7 +270,7 @@ export class FlightMotionControl implements IControl {
         const cameraPosition = this._calculateCameraPosition(predictedState);
         if (!cameraPosition) return;
 
-        const {camPos, camAlt, heading, pitch, roll} = cameraPosition;
+        const { camPos, camAlt, heading, pitch, roll } = cameraPosition;
 
         // Update the map camera
         const jumpToOptions = this._map.calculateCameraOptionsFromCameraLngLatAltRotation(camPos, camAlt, heading, pitch, roll);
@@ -252,13 +330,24 @@ export class FlightMotionControl implements IControl {
         let pitch: number;
         let roll: number;
 
+        // Convert flight pitch to camera pitch:
+        // flight pitch 0° → camera pitch 90° (looking ahead)
+        // flight pitch 90° → camera pitch 0° (looking down)
+        // flight pitch -90° → camera pitch 180° (looking up)
+        const convertPitch = (flightPitch: number): number => {
+            // Clamp flight pitch to [-90, 90] range
+            const clampedPitch = Math.max(-90, Math.min(90, flightPitch));
+            // Convert to camera pitch where 90 is straight ahead
+            return 90 - clampedPitch;
+        };
+
         switch (mode.type) {
             case 'COCKPIT':
                 // Position camera at flight position with slight offset for pilot view
                 camPos = new LngLat(state.position.lng, state.position.lat);
                 camAlt = state.position.altitude + mode.offset.z;
                 heading = state.attitude.heading;
-                pitch = state.attitude.pitch;
+                pitch = convertPitch(state.attitude.pitch);
                 roll = state.attitude.roll;
                 break;
 
@@ -274,13 +363,13 @@ export class FlightMotionControl implements IControl {
                 );
                 camAlt = state.position.altitude + offsetMeters.z;
                 heading = state.attitude.heading;
-                pitch = state.attitude.pitch * 0.5;
+                pitch = convertPitch(state.attitude.pitch * 0.5);
                 roll = state.attitude.roll * 0.5;
                 break;
 
             case 'ORBIT':
                 // Calculate orbiting camera position
-                const orbitAngle = (this.now % 30000) / 30000 * Math.PI * 2;
+                const orbitAngle = (this.now() % 30000) / 30000 * Math.PI * 2;
                 const radius = Math.sqrt(mode.offset.y * mode.offset.y + mode.offset.x * mode.offset.x);
                 const orbitX = Math.cos(orbitAngle) * radius;
                 const orbitY = Math.sin(orbitAngle) * radius;
@@ -435,7 +524,7 @@ export class FlightMotionControl implements IControl {
     }
 
     /**
-     * Calculate pitch to look at a point using the haversine formula
+     * Calculate pitch to look at a point
      */
     _calculatePitchToPoint(fromLat: number, fromLng: number, fromAlt: number,
         toLat: number, toLng: number, toAlt: number): number {

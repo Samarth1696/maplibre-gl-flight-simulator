@@ -60,14 +60,14 @@ export declare class FlightMotionControl implements IControl {
     _startUpdate(): void;
     _stopUpdate(): void;
     updateFlightState(state: {
-        lat: number;
-        lng: number;
-        elevation: number;
-        flightHeading: number;
-        groundSpeed: number;
-        verticalSpeed: number;
-        pitchAttitude: number;
-        rollAttitude: number;
+        lat?: number;
+        lng?: number;
+        elevation?: number;
+        flightHeading?: number;
+        groundSpeed?: number;
+        verticalSpeed?: number;
+        pitchAttitude?: number;
+        rollAttitude?: number;
     }): void;
     _updateCameraFromState(): void;
     _predictCurrentState(deltaTime: number): MotionState;
@@ -103,7 +103,7 @@ export declare class FlightMotionControl implements IControl {
      */
     _calculateHeadingToPoint(fromLat: number, fromLng: number, toLat: number, toLng: number): number;
     /**
-     * Calculate pitch to look at a point using the haversine formula
+     * Calculate pitch to look at a point
      */
     _calculatePitchToPoint(fromLat: number, fromLng: number, fromAlt: number, toLat: number, toLng: number, toAlt: number): number;
     /**
