@@ -186,7 +186,7 @@ export class FlightMotionControl implements IControl {
         // calculate new elevation based on vertical speed and time
         if (position.altitude === undefined && state.verticalSpeed !== undefined) {
             const verticalDelta = state.verticalSpeed * deltaTime;
-            position.altitude = Number((this._currentState.position.altitude + verticalDelta).toFixed(6));
+            position.altitude = this._currentState.position.altitude + verticalDelta;
         } else if (position.altitude === undefined) {
             position.altitude = this._currentState.position.altitude;
         }
@@ -194,7 +194,7 @@ export class FlightMotionControl implements IControl {
         // If verticalSpeed is missing but elevation changed, calculate it
         let verticalSpeed = state.verticalSpeed;
         if (verticalSpeed === undefined && state.elevation !== undefined) {
-            verticalSpeed = Number(((position.altitude - this._currentState.position.altitude) / deltaTime).toFixed(6));
+            verticalSpeed = (position.altitude - this._currentState.position.altitude) / deltaTime;
         } else if (verticalSpeed === undefined) {
             verticalSpeed = this._currentState.velocity.verticalSpeed;
         }
@@ -203,10 +203,9 @@ export class FlightMotionControl implements IControl {
         let groundSpeed = state.groundSpeed;
         if (groundSpeed === undefined && (state.lat !== undefined || state.lng !== undefined)) {
             const metersPerDegree = 111111;
-            const dx = Number(((position.lng - this._currentState.position.lng) *
-                Math.cos(position.lat * Math.PI / 180) * metersPerDegree).toFixed(6));
-            const dy = Number(((position.lat - this._currentState.position.lat) * metersPerDegree).toFixed(6));
-            groundSpeed = Number((Math.sqrt(dx * dx + dy * dy) / deltaTime).toFixed(6));
+            const dx = (position.lng - this._currentState.position.lng) * Math.cos(position.lat * Math.PI / 180) * metersPerDegree;
+            const dy = (position.lat - this._currentState.position.lat) * metersPerDegree;
+            groundSpeed = Math.sqrt(dx * dx + dy * dy) / deltaTime;
         } else if (groundSpeed === undefined) {
             groundSpeed = this._currentState.velocity.groundSpeed;
         }
@@ -217,7 +216,7 @@ export class FlightMotionControl implements IControl {
             // Calculate heading from position change
             const dx = position.lng - this._currentState.position.lng;
             const dy = position.lat - this._currentState.position.lat;
-            flightHeading = Number((((Math.atan2(dx, dy) * 180 / Math.PI) + 360) % 360).toFixed(6));
+            flightHeading = ((Math.atan2(dx, dy) * 180 / Math.PI) + 360) % 360;
         } else if (flightHeading === undefined) {
             flightHeading = this._currentState.attitude.heading;
         }
@@ -226,7 +225,7 @@ export class FlightMotionControl implements IControl {
         let pitchAttitude = state.pitchAttitude;
         if (pitchAttitude === undefined && verticalSpeed !== undefined && groundSpeed !== undefined) {
             // Calculate pitch from vertical and ground speed
-            pitchAttitude = Number((Math.atan2(verticalSpeed, groundSpeed) * 180 / Math.PI).toFixed(6));
+            pitchAttitude = Math.atan2(verticalSpeed, groundSpeed) * 180 / Math.PI;
         } else if (pitchAttitude === undefined) {
             pitchAttitude = this._currentState.attitude.pitch;
         }
@@ -236,18 +235,18 @@ export class FlightMotionControl implements IControl {
 
         this._currentState = {
             position: {
-                lat: Number(position.lat.toFixed(6)),
-                lng: Number(position.lng.toFixed(6)),
-                altitude: Number(position.altitude.toFixed(6))
+                lat: position.lat,
+                lng: position.lng,
+                altitude: position.altitude
             },
             attitude: {
-                heading: Number(flightHeading.toFixed(6)),
-                pitch: Number(pitchAttitude.toFixed(6)),
-                roll: Number(rollAttitude.toFixed(6))
+                heading: flightHeading,
+                pitch: pitchAttitude,
+                roll: rollAttitude
             },
             velocity: {
-                groundSpeed: Number(groundSpeed.toFixed(6)),
-                verticalSpeed: Number(verticalSpeed.toFixed(6)),
+                groundSpeed,
+                verticalSpeed,
             },
             lastUpdateTime: now
         };
@@ -270,7 +269,7 @@ export class FlightMotionControl implements IControl {
         const cameraPosition = this._calculateCameraPosition(predictedState);
         if (!cameraPosition) return;
 
-        const { camPos, camAlt, heading, pitch, roll } = cameraPosition;
+        const {camPos, camAlt, heading, pitch, roll} = cameraPosition;
 
         // Update the map camera
         const jumpToOptions = this._map.calculateCameraOptionsFromCameraLngLatAltRotation(camPos, camAlt, heading, pitch, roll);
@@ -284,32 +283,31 @@ export class FlightMotionControl implements IControl {
 
         // Use smoothed velocities to predict new position
         // Calculate position changes
-        const latChange = Number(((this._velocitySmoothed.y * deltaTime) / metersPerDegree).toFixed(6));
-        const lngChange = Number(((this._velocitySmoothed.x * deltaTime) /
-            (metersPerDegree * Math.cos(Number((state.position.lat * Math.PI / 180).toFixed(6))))
-        ).toFixed(6));
-        const altChange = Number((this._velocitySmoothed.z * deltaTime).toFixed(6));
+        const latChange = (this._velocitySmoothed.y * deltaTime) / metersPerDegree;
+        const lngChange = (this._velocitySmoothed.x * deltaTime) /
+            (metersPerDegree * Math.cos(state.position.lat * Math.PI / 180));
+        const altChange = this._velocitySmoothed.z * deltaTime;
 
         // Calculate attitude changes
-        const headingChange = Number((this._angularVelocitySmoothed.heading * deltaTime).toFixed(6));
-        const pitchChange = Number((this._angularVelocitySmoothed.pitch * deltaTime).toFixed(6));
-        const rollChange = Number((this._angularVelocitySmoothed.roll * deltaTime).toFixed(6));
+        const headingChange = this._angularVelocitySmoothed.heading * deltaTime;
+        const pitchChange = this._angularVelocitySmoothed.pitch * deltaTime;
+        const rollChange = this._angularVelocitySmoothed.roll * deltaTime;
 
         // Create predicted state
         const predictedState: MotionState = {
             position: {
-                lat: Number((state.position.lat + latChange).toFixed(6)),
-                lng: Number((state.position.lng + lngChange).toFixed(6)),
-                altitude: Number((state.position.altitude + altChange).toFixed(6))
+                lat: state.position.lat + latChange,
+                lng: state.position.lng + lngChange,
+                altitude: state.position.altitude + altChange
             },
             attitude: {
-                heading: Number(((state.attitude.heading + headingChange + 360) % 360).toFixed(6)),
-                pitch: Number((state.attitude.pitch + pitchChange).toFixed(6)),
-                roll: Number((state.attitude.roll + rollChange).toFixed(6))
+                heading: (state.attitude.heading + headingChange + 360) % 360,
+                pitch: state.attitude.pitch + pitchChange,
+                roll: state.attitude.roll + rollChange
             },
             velocity: {
-                groundSpeed: Number(state.velocity.groundSpeed.toFixed(6)),
-                verticalSpeed: Number(state.velocity.verticalSpeed.toFixed(6)),
+                groundSpeed: state.velocity.groundSpeed,
+                verticalSpeed: state.velocity.verticalSpeed,
             },
             lastUpdateTime: state.lastUpdateTime
         };
@@ -426,15 +424,8 @@ export class FlightMotionControl implements IControl {
         const lng1 = lng * Math.PI / 180;
         const bearing1 = bearingRad + offsetBearing;
 
-        const lat2 = Math.asin(
-            Math.sin(lat1) * Math.cos(offsetDistance / R) +
-            Math.cos(lat1) * Math.sin(offsetDistance / R) * Math.cos(bearing1)
-        );
-
-        const lng2 = lng1 + Math.atan2(
-            Math.sin(bearing1) * Math.sin(offsetDistance / R) * Math.cos(lat1),
-            Math.cos(offsetDistance / R) - Math.sin(lat1) * Math.sin(lat2)
-        );
+        const lat2 = Math.asin(Math.sin(lat1) * Math.cos(offsetDistance / R) + Math.cos(lat1) * Math.sin(offsetDistance / R) * Math.cos(bearing1));
+        const lng2 = lng1 + Math.atan2(Math.sin(bearing1) * Math.sin(offsetDistance / R) * Math.cos(lat1), Math.cos(offsetDistance / R) - Math.sin(lat1) * Math.sin(lat2));
 
         return new LngLat(
             lng2 * 180 / Math.PI,
@@ -451,45 +442,39 @@ export class FlightMotionControl implements IControl {
         const metersPerDegree = 111111;
 
         // Calculate position differences
-        const cosLat = Number((Math.cos(curr.position.lat * Math.PI / 180)).toFixed(6));
-        const dx = Number(((curr.position.lng - prev.position.lng) * cosLat * metersPerDegree).toFixed(6));
-        const dy = Number(((curr.position.lat - prev.position.lat) * metersPerDegree).toFixed(6));
-        const dz = Number((curr.position.altitude - prev.position.altitude).toFixed(6));
+        const cosLat = Math.cos(curr.position.lat * Math.PI / 180);
+        const dx = (curr.position.lng - prev.position.lng) * cosLat * metersPerDegree;
+        const dy = (curr.position.lat - prev.position.lat) * metersPerDegree;
+        const dz = curr.position.altitude - prev.position.altitude;
 
         // Calculate instantaneous velocities
-        const vx = Number((dx / deltaTime).toFixed(6));
-        const vy = Number((dy / deltaTime).toFixed(6));
-        const vz = Number((dz / deltaTime).toFixed(6));
+        const vx = dx / deltaTime;
+        const vy = dy / deltaTime;
+        const vz = dz / deltaTime;
 
         // Calculate angular differences
-        const dHeading = Number((this._shortestAngleDifference(prev.attitude.heading, curr.attitude.heading)).toFixed(6));
-        const dPitch = Number((curr.attitude.pitch - prev.attitude.pitch).toFixed(6));
-        const dRoll = Number((curr.attitude.roll - prev.attitude.roll).toFixed(6));
+        const dHeading = this._shortestAngleDifference(prev.attitude.heading, curr.attitude.heading);
+        const dPitch = curr.attitude.pitch - prev.attitude.pitch;
+        const dRoll = curr.attitude.roll - prev.attitude.roll;
 
         // Calculate angular velocities
-        const angularVelocityHeading = Number((dHeading / deltaTime).toFixed(6));
-        const angularVelocityPitch = Number((dPitch / deltaTime).toFixed(6));
-        const angularVelocityRoll = Number((dRoll / deltaTime).toFixed(6));
+        const angularVelocityHeading = dHeading / deltaTime;
+        const angularVelocityPitch = dPitch / deltaTime;
+        const angularVelocityRoll = dRoll / deltaTime;
 
         // Apply smoothing
         // Increase the smoothing factor to add more precision
         const predictionSmoothingFactor = 0.3;
 
         // Smooth linear velocities
-        this._velocitySmoothed.x = Number((this._velocitySmoothed.x +
-            (vx - this._velocitySmoothed.x) * predictionSmoothingFactor).toFixed(6));
-        this._velocitySmoothed.y = Number((this._velocitySmoothed.y +
-            (vy - this._velocitySmoothed.y) * predictionSmoothingFactor).toFixed(6));
-        this._velocitySmoothed.z = Number((this._velocitySmoothed.z +
-            (vz - this._velocitySmoothed.z) * predictionSmoothingFactor).toFixed(6));
+        this._velocitySmoothed.x = this._velocitySmoothed.x + (vx - this._velocitySmoothed.x) * predictionSmoothingFactor;
+        this._velocitySmoothed.y = this._velocitySmoothed.y + (vy - this._velocitySmoothed.y) * predictionSmoothingFactor;
+        this._velocitySmoothed.z = this._velocitySmoothed.z + (vz - this._velocitySmoothed.z) * predictionSmoothingFactor;
 
         // Smooth angular velocities
-        this._angularVelocitySmoothed.heading = Number((this._angularVelocitySmoothed.heading +
-            (angularVelocityHeading - this._angularVelocitySmoothed.heading) * predictionSmoothingFactor).toFixed(6));
-        this._angularVelocitySmoothed.pitch = Number((this._angularVelocitySmoothed.pitch +
-            (angularVelocityPitch - this._angularVelocitySmoothed.pitch) * predictionSmoothingFactor).toFixed(6));
-        this._angularVelocitySmoothed.roll = Number((this._angularVelocitySmoothed.roll +
-            (angularVelocityRoll - this._angularVelocitySmoothed.roll) * predictionSmoothingFactor).toFixed(6));
+        this._angularVelocitySmoothed.heading = this._angularVelocitySmoothed.heading + (angularVelocityHeading - this._angularVelocitySmoothed.heading) * predictionSmoothingFactor;
+        this._angularVelocitySmoothed.pitch = this._angularVelocitySmoothed.pitch + (angularVelocityPitch - this._angularVelocitySmoothed.pitch) * predictionSmoothingFactor;
+        this._angularVelocitySmoothed.roll = this._angularVelocitySmoothed.roll + (angularVelocityRoll - this._angularVelocitySmoothed.roll) * predictionSmoothingFactor;
     }
 
     /**
@@ -545,9 +530,9 @@ export class FlightMotionControl implements IControl {
      * Calculate shortest angle difference
      */
     _shortestAngleDifference(angle1: number, angle2: number): number {
-        let diff = Number((angle2 - angle1).toFixed(6));
-        while (diff > 180) diff = Number((diff - 360).toFixed(6));
-        while (diff < -180) diff = Number((diff + 360).toFixed(6));
+        let diff = angle2 - angle1;
+        while (diff > 180) diff = diff - 360;
+        while (diff < -180) diff = diff + 360;
         return diff;
     }
 
