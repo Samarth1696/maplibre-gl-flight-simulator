@@ -157,14 +157,14 @@ export class FlightMotionControl implements IControl {
         if (!this._currentState) {
             this._currentState = {
                 position: {
-                    lat: state.lat || 0,
-                    lng: state.lng || 0,
-                    altitude: state.elevation || 0
+                    lat: state.lat || this._map.transform.getCameraLngLat().lat,
+                    lng: state.lng || this._map.transform.getCameraLngLat().lng,
+                    altitude: state.elevation || this._map.transform.getCameraAltitude()
                 },
                 attitude: {
-                    heading: state.flightHeading || 0,
-                    pitch: state.pitchAttitude || 0,
-                    roll: state.rollAttitude || 0
+                    heading: state.flightHeading || this._map.getBearing(),
+                    pitch: state.pitchAttitude || this._map.getPitch(),
+                    roll: state.rollAttitude || this._map.getRoll()
                 },
                 velocity: {
                     groundSpeed: state.groundSpeed || 0,
