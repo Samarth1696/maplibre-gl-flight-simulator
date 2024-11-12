@@ -101,6 +101,7 @@ export class FlightMotionControl implements IControl {
         this._container = document.createElement('div');
         this._container.className = 'maplibregl-ctrl';
 
+        this._map.setCenterClampedToGround(false);
         this._map.dragRotate.disable();
         this._map.touchZoomRotate.disableRotation();
         this._map.keyboard.disable();
