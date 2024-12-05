@@ -148,8 +148,8 @@ export class FlightMotionControl implements IControl {
         rollAttitude?: number;
     }) {
         const now = this.now();
-        const deltaTime = this._currentState ?
-            (now - this._currentState.lastUpdateTime) / 1000 : 0;
+        const deltaTime = this._previousState ?
+            (now - this._previousState.lastUpdateTime) / 1000 : 0;
 
         // Store previous state
         this._previousState = this._currentState;
