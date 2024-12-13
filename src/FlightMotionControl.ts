@@ -21,7 +21,6 @@ interface MotionState {
         groundSpeed: number;
         verticalSpeed: number;
     };
-    lastUpdateTime: number;
 }
 
 interface CameraMode {
@@ -38,26 +37,54 @@ interface CameraMode {
     };
 }
 
+interface MovementInterpolation {
+    start: MotionState;
+    target: MotionState;
+    remainingFrames: number;
+    // Pre-calculated per-frame deltas
+    deltas: {
+        lat: number;
+        lng: number;
+        altitude: number;
+        heading: number;
+        pitch: number;
+        roll: number;
+        groundSpeed: number;
+        verticalSpeed: number;
+    };
+}
+
 export class FlightMotionControl implements IControl {
-
-    now = (typeof performance !== 'undefined' && performance.now) ? performance.now.bind(performance) : Date.now;
-
     _map: Map;
     _container: HTMLElement;
+    _updateInterval: number | null = null;
     _currentState: MotionState | null = null;
     _previousState: MotionState | null = null;
-    _frameId: number | null = null;
+    _currentInterpolation: MovementInterpolation | null = null;
+    _lastUpdateTime: number = 0;
+    _disposed: boolean = false;
 
-    // Camera configuration
+    // prediction state vaiables
+    predict: boolean = false;
+    shouldPredict: boolean = false;
+    _deltaIsCalculated: boolean = false;
+    _currentDeltaTimeForPrediction: number;
+
+    // Fixed frames configuration
+    private readonly FRAMES = 40;
+    private FRAME_INTERVAL = 100; // default 100ms
+
+    _velocity = { x: 0, y: 0, z: 0 };
+    _angularVelocity = { heading: 0, pitch: 0, roll: 0 };
+
     _cameraMode: CameraMode = {
         type: 'COCKPIT',
         offset: { x: 0, y: -30, z: 10 },
         orientation: { heading: 0, pitch: 0, roll: 0 }
     };
 
-    // Interpolation state
-    _velocitySmoothed = { x: 0, y: 0, z: 0 };
-    _angularVelocitySmoothed = { heading: 0, pitch: 0, roll: 0 };
+    // Bind methods to avoid creating new function references
+    private readonly _boundUpdateFrame: () => void;
 
     constructor(options: {
         initialPosition?: {
@@ -66,7 +93,12 @@ export class FlightMotionControl implements IControl {
             altitude: number;
         };
         cameraMode?: CameraMode;
+        predict?: boolean;
     } = {}) {
+        // Bind update function once in constructor
+        this._boundUpdateFrame = this._updateFrame.bind(this);
+        this._lastUpdateTime = performance.now();
+
         if (options.initialPosition) {
             this._currentState = {
                 position: {
@@ -81,9 +113,8 @@ export class FlightMotionControl implements IControl {
                 },
                 velocity: {
                     groundSpeed: 0,
-                    verticalSpeed: 0,
-                },
-                lastUpdateTime: this.now()
+                    verticalSpeed: 0
+                }
             };
         }
 
@@ -94,6 +125,10 @@ export class FlightMotionControl implements IControl {
                 orientation: options.cameraMode.orientation || { heading: 0, pitch: 0, roll: 0 }
             };
         }
+
+        if (options.predict) {
+            this.shouldPredict = true;
+        }
     }
 
     onAdd(map: Map): HTMLElement {
@@ -101,40 +136,65 @@ export class FlightMotionControl implements IControl {
         this._container = document.createElement('div');
         this._container.className = 'maplibregl-ctrl';
 
-        this._map.setCenterClampedToGround(false);
         this._map.dragRotate.disable();
         this._map.touchZoomRotate.disableRotation();
         this._map.keyboard.disable();
 
-        // Start the update loop
+        this._map._fadeDuration = 0;
+        this._map._maxTileCacheSize = 8;
+
         this._startUpdate();
 
         return this._container;
     }
 
     onRemove(): void {
-        this._stopUpdate();
-        this._container.parentNode?.removeChild(this._container);
+        this._dispose();
+    }
 
-        this._map.dragRotate.enable();
-        this._map.touchZoomRotate.enableRotation();
-        this._map.keyboard.enable();
-        this._map = undefined;
+    _dispose(): void {
+        if (this._disposed) return;
+
+        this._stopUpdate();
+
+        if (this._container?.parentNode) {
+            this._container.parentNode.removeChild(this._container);
+        }
+
+        if (this._map) {
+            this._map.dragRotate.enable();
+            this._map.touchZoomRotate.enableRotation();
+            this._map.keyboard.enable();
+        }
+
+        // Clear all references
+        this._container = null;
+        this._map = null;
+        this._currentState = null;
+        this._currentInterpolation = null;
+
+        // Mark as disposed
+        this._disposed = true;
     }
 
     _startUpdate(): void {
-        const updateFrame = () => {
-            this._updateCameraFromState();
-            this._frameId = requestAnimationFrame(updateFrame);
-        };
-        this._frameId = requestAnimationFrame(updateFrame);
+        this._stopUpdate();
+        if (!this._disposed) {
+            this._updateInterval = window.setInterval(this._boundUpdateFrame, this.FRAME_INTERVAL);
+        }
     }
 
     _stopUpdate(): void {
-        if (this._frameId) {
-            cancelAnimationFrame(this._frameId);
-            this._frameId = null;
+        if (this._updateInterval !== null) {
+            window.clearInterval(this._updateInterval);
+            this._updateInterval = null;
         }
+    }
+
+    _updateFrame(): void {
+        // Skip update if disposed or missing dependencies
+        if (this._disposed || !this._map) return;
+        this._interpolateFrame();
     }
 
     updateFlightState(state: {
@@ -146,153 +206,198 @@ export class FlightMotionControl implements IControl {
         verticalSpeed?: number;
         pitchAttitude?: number;
         rollAttitude?: number;
-    }) {
-        const now = this.now();
-        const deltaTime = this._previousState ?
-            (now - this._previousState.lastUpdateTime) / 1000 : 0;
+    }): void {
+        const deltaTime = performance.now() - this._lastUpdateTime;
+        this.FRAME_INTERVAL = deltaTime;
 
-        // Store previous state
         this._previousState = this._currentState;
-
-        // If we don't have a current state, we need minimum values to start
+        // If no current state exists, initialize it
         if (!this._currentState) {
             this._currentState = {
                 position: {
-                    lat: state.lat || this._map.transform.getCameraLngLat().lat,
-                    lng: state.lng || this._map.transform.getCameraLngLat().lng,
-                    altitude: state.elevation || this._map.transform.getCameraAltitude()
+                    lat: state.lat ?? this._map.transform.getCameraLngLat().lat,
+                    lng: state.lng ?? this._map.transform.getCameraLngLat().lng,
+                    altitude: state.elevation ?? this._map.transform.getCameraAltitude()
                 },
                 attitude: {
-                    heading: state.flightHeading || this._map.getBearing(),
-                    pitch: state.pitchAttitude || this._map.getPitch(),
-                    roll: state.rollAttitude || this._map.getRoll()
+                    heading: state.flightHeading ?? 0,
+                    pitch: state.pitchAttitude ?? 0,
+                    roll: state.rollAttitude ?? 0
                 },
                 velocity: {
-                    groundSpeed: state.groundSpeed || 0,
-                    verticalSpeed: state.verticalSpeed || 0,
-                },
-                lastUpdateTime: now
+                    groundSpeed: state.groundSpeed ?? 0,
+                    verticalSpeed: state.verticalSpeed ?? 0
+                }
             };
             return;
         }
 
-        // Calculate missing values based on previous state and provided values
-        const position = {
-            lat: state.lat ?? this._currentState.position.lat,
-            lng: state.lng ?? this._currentState.position.lng,
-            altitude: state.elevation
-        };
-
-        // If elevation is not provided but verticalSpeed is available,
-        // calculate new elevation based on vertical speed and time
-        if (position.altitude === undefined && state.verticalSpeed !== undefined) {
-            const verticalDelta = state.verticalSpeed * deltaTime;
-            position.altitude = this._currentState.position.altitude + verticalDelta;
-        } else if (position.altitude === undefined) {
-            position.altitude = this._currentState.position.altitude;
-        }
-
-        // If verticalSpeed is missing but elevation changed, calculate it
-        let verticalSpeed = state.verticalSpeed;
-        if (verticalSpeed === undefined && state.elevation !== undefined) {
-            verticalSpeed = (position.altitude - this._currentState.position.altitude) / deltaTime;
-        } else if (verticalSpeed === undefined) {
-            verticalSpeed = this._currentState.velocity.verticalSpeed;
-        }
-
-        // If groundSpeed is missing but we have position changes, calculate it
-        let groundSpeed = state.groundSpeed;
-        if (groundSpeed === undefined && (state.lat !== undefined || state.lng !== undefined)) {
-            const metersPerDegree = 111111;
-            const dx = (position.lng - this._currentState.position.lng) * Math.cos(position.lat * Math.PI / 180) * metersPerDegree;
-            const dy = (position.lat - this._currentState.position.lat) * metersPerDegree;
-            groundSpeed = Math.sqrt(dx * dx + dy * dy) / deltaTime;
-        } else if (groundSpeed === undefined) {
-            groundSpeed = this._currentState.velocity.groundSpeed;
-        }
-
-        // Calculate or maintain heading values
-        let flightHeading = state.flightHeading;
-        if (flightHeading === undefined && (state.lat !== undefined || state.lng !== undefined)) {
-            // Calculate heading from position change
-            const dx = position.lng - this._currentState.position.lng;
-            const dy = position.lat - this._currentState.position.lat;
-            flightHeading = ((Math.atan2(dx, dy) * 180 / Math.PI) + 360) % 360;
-        } else if (flightHeading === undefined) {
-            flightHeading = this._currentState.attitude.heading;
-        }
-
-        // Calculate or maintain pitch
-        let pitchAttitude = state.pitchAttitude;
-        if (pitchAttitude === undefined && verticalSpeed !== undefined && groundSpeed !== undefined) {
-            // Calculate pitch from vertical and ground speed
-            pitchAttitude = Math.atan2(verticalSpeed, groundSpeed) * 180 / Math.PI;
-        } else if (pitchAttitude === undefined) {
-            pitchAttitude = this._currentState.attitude.pitch;
-        }
-
-        // Maintain roll if not provided
-        const rollAttitude = state.rollAttitude ?? this._currentState.attitude.roll;
-
-        this._currentState = {
+        // Create target state from current state and new values
+        const targetState: MotionState = {
             position: {
-                lat: position.lat,
-                lng: position.lng,
-                altitude: position.altitude
+                lat: state.lat ?? this._currentState.position.lat,
+                lng: state.lng ?? this._currentState.position.lng,
+                altitude: state.elevation ?? this._currentState.position.altitude
             },
             attitude: {
-                heading: flightHeading,
-                pitch: pitchAttitude,
-                roll: rollAttitude
+                heading: state.flightHeading ?? this._currentState.attitude.heading,
+                pitch: state.pitchAttitude ?? this._currentState.attitude.pitch,
+                roll: state.rollAttitude ?? this._currentState.attitude.roll
             },
             velocity: {
-                groundSpeed,
-                verticalSpeed,
-            },
-            lastUpdateTime: now
+                groundSpeed: state.groundSpeed ?? this._currentState.velocity.groundSpeed,
+                verticalSpeed: state.verticalSpeed ?? this._currentState.velocity.verticalSpeed
+            }
         };
 
-        // Calculate motion derivatives if we have previous state
-        if (this._previousState && deltaTime > 0) {
-            this._updateMotionDerivatives(deltaTime);
+        // Calculate total frames for interpolation
+        const frames = Math.round((deltaTime / 1000) * this.FRAMES);
+
+        // Pre-calculate deltas per frame
+        const deltas = {
+            lat: (targetState.position.lat - this._currentState.position.lat) / frames,
+            lng: this._calculateShortestLongitudeDelta(
+                this._currentState.position.lng,
+                targetState.position.lng
+            ) / frames,
+            altitude: (targetState.position.altitude - this._currentState.position.altitude) / frames,
+            heading: this._calculateShortestAngleDelta(
+                this._currentState.attitude.heading,
+                targetState.attitude.heading
+            ) / frames,
+            pitch: (targetState.attitude.pitch - this._currentState.attitude.pitch) / frames,
+            roll: this._calculateShortestAngleDelta(
+                this._currentState.attitude.roll,
+                targetState.attitude.roll
+            ) / frames,
+            groundSpeed: (targetState.velocity.groundSpeed - this._currentState.velocity.groundSpeed) / frames,
+            verticalSpeed: (targetState.velocity.verticalSpeed - this._currentState.velocity.verticalSpeed) / frames
+        };
+
+        // Set up new interpolation
+        this._currentInterpolation = {
+            start: this._currentState,
+            target: targetState,
+            remainingFrames: frames,
+            deltas
+        };
+
+        if (this.shouldPredict) {
+            this._updateMotionDerivatives(deltaTime / 1000);
         }
     }
 
-    _updateCameraFromState(): void {
-        if (!this._currentState || !this._map) return;
+    _updateMotionDerivatives(deltaTime: number) {
+        if (!this._previousState || !this._currentState) return;
 
-        const now = this.now();
-        const deltaTime = (now - this._currentState.lastUpdateTime) / 1000;
+        const prev = this._previousState;
+        const curr = this._currentState;
 
-        // Predict current position based on last known velocity
-        const predictedState = this._predictCurrentState(deltaTime);
+        // According to WGS-84, 0° to 1° of latitude = 110,574.38855780 metres.
+        // Might not be correct for all locations but works for this purpose
+        const metersPerDegree = 110574.3;
 
-        const cameraPosition = this._calculateCameraPosition(predictedState);
+        // Calculate position differences
+        const cosLat = Math.cos(curr.position.lat * Math.PI / 180);
+        const dx = (curr.position.lng - prev.position.lng) * cosLat * metersPerDegree;
+        const dy = (curr.position.lat - prev.position.lat) * metersPerDegree;
+        const dz = curr.position.altitude - prev.position.altitude;
+
+        // Calculate instantaneous velocities
+        this._velocity.x = dx / deltaTime;
+        this._velocity.y = dy / deltaTime;
+        this._velocity.z = dz / deltaTime;
+
+        // Calculate angular differences
+        const dHeading = this._calculateShortestAngleDelta(prev.attitude.heading, curr.attitude.heading);
+        const dPitch = curr.attitude.pitch - prev.attitude.pitch;
+        const dRoll = curr.attitude.roll - prev.attitude.roll;
+
+        // Calculate angular velocities
+        this._angularVelocity.heading = dHeading / deltaTime;
+        this._angularVelocity.pitch = dPitch / deltaTime;
+        this._angularVelocity.roll = dRoll / deltaTime;
+    }
+
+    private _interpolateFrame(): void {
+        if (!this._currentInterpolation || !this._currentState || !this._map) return;
+
+        if (this._currentInterpolation.remainingFrames <= 0) {
+            // Set final state and clear interpolation
+            this._currentState = this._currentInterpolation.target;
+            this._currentInterpolation = null;
+        } else {
+            // Update current state using pre-calculated deltas
+            this._currentState = {
+                position: {
+                    lat: this._currentState.position.lat + this._currentInterpolation.deltas.lat,
+                    lng: this._currentState.position.lng + this._currentInterpolation.deltas.lng,
+                    altitude: this._currentState.position.altitude + this._currentInterpolation.deltas.altitude
+                },
+                attitude: {
+                    heading: (this._currentState.attitude.heading + this._currentInterpolation.deltas.heading + 360) % 360,
+                    pitch: this._currentState.attitude.pitch + this._currentInterpolation.deltas.pitch,
+                    roll: (this._currentState.attitude.roll + this._currentInterpolation.deltas.roll + 360) % 360
+                },
+                velocity: {
+                    groundSpeed: this._currentState.velocity.groundSpeed + this._currentInterpolation.deltas.groundSpeed,
+                    verticalSpeed: this._currentState.velocity.verticalSpeed + this._currentInterpolation.deltas.verticalSpeed
+                }
+            };
+
+            this._currentInterpolation.remainingFrames--;
+        }
+
+        this._updateCamera();
+    }
+
+    _updateCamera(): void {
+        let stateToUse = this._currentState;
+
+        if (this.predict && this._previousState) {
+            if(!this._deltaIsCalculated) {
+                this._currentDeltaTimeForPrediction = performance.now() - this._lastUpdateTime; 
+                this._deltaIsCalculated = true;
+            }
+
+            // Get predicted state
+            const predictedState = this._predictCurrentState(this._currentDeltaTimeForPrediction);
+            stateToUse = predictedState;
+        }
+
+        // Calculate camera position based on state
+        const cameraPosition = this._calculateCameraPosition(stateToUse);
         if (!cameraPosition) return;
 
-        const {camPos, camAlt, heading, pitch, roll} = cameraPosition;
+        const { camPos, camAlt, heading, pitch, roll } = cameraPosition;
 
         // Update the map camera
-        const jumpToOptions = this._map.calculateCameraOptionsFromCameraLngLatAltRotation(camPos, camAlt, heading, pitch, roll);
+        const jumpToOptions = this._map.calculateCameraOptionsFromCameraLngLatAltRotation(
+            camPos, camAlt, heading, pitch, roll
+        );
         this._map.jumpTo(jumpToOptions);
+
+        if(this.predict) {
+            this._updateCamera();
+        }
     }
 
     _predictCurrentState(deltaTime: number): MotionState {
         const state = this._currentState;
 
-        const metersPerDegree = 111111;
+        const metersPerDegree = 110574.3;
 
         // Use smoothed velocities to predict new position
         // Calculate position changes
-        const latChange = (this._velocitySmoothed.y * deltaTime) / metersPerDegree;
-        const lngChange = (this._velocitySmoothed.x * deltaTime) /
+        const latChange = (this._velocity.y * deltaTime) / metersPerDegree;
+        const lngChange = (this._velocity.x * deltaTime) /
             (metersPerDegree * Math.cos(state.position.lat * Math.PI / 180));
-        const altChange = this._velocitySmoothed.z * deltaTime;
+        const altChange = this._velocity.z * deltaTime;
 
         // Calculate attitude changes
-        const headingChange = this._angularVelocitySmoothed.heading * deltaTime;
-        const pitchChange = this._angularVelocitySmoothed.pitch * deltaTime;
-        const rollChange = this._angularVelocitySmoothed.roll * deltaTime;
+        const headingChange = this._angularVelocity.heading * deltaTime;
+        const pitchChange = this._angularVelocity.pitch * deltaTime;
+        const rollChange = this._angularVelocity.roll * deltaTime;
 
         // Create predicted state
         const predictedState: MotionState = {
@@ -310,10 +415,25 @@ export class FlightMotionControl implements IControl {
                 groundSpeed: state.velocity.groundSpeed,
                 verticalSpeed: state.velocity.verticalSpeed,
             },
-            lastUpdateTime: state.lastUpdateTime
         };
 
         return predictedState;
+    }
+
+    _calculateShortestAngleDelta(start: number, end: number): number {
+        start = ((start % 360) + 360) % 360;
+        end = ((end % 360) + 360) % 360;
+        let delta = end - start;
+        if (delta > 180) delta -= 360;
+        if (delta < -180) delta += 360;
+        return delta;
+    }
+
+    _calculateShortestLongitudeDelta(start: number, end: number): number {
+        let delta = end - start;
+        if (delta > 180) delta -= 360;
+        if (delta < -180) delta += 360;
+        return delta;
     }
 
     /**
@@ -368,7 +488,7 @@ export class FlightMotionControl implements IControl {
 
             case 'ORBIT':
                 // Calculate orbiting camera position
-                const orbitAngle = (this.now() % 30000) / 30000 * Math.PI * 2;
+                const orbitAngle = (performance.now() % 30000) / 30000 * Math.PI * 2;
                 const radius = Math.sqrt(mode.offset.y * mode.offset.y + mode.offset.x * mode.offset.x);
                 const orbitX = Math.cos(orbitAngle) * radius;
                 const orbitY = Math.sin(orbitAngle) * radius;
@@ -434,50 +554,6 @@ export class FlightMotionControl implements IControl {
         );
     }
 
-    _updateMotionDerivatives(deltaTime: number) {
-        if (!this._previousState || !this._currentState) return;
-
-        const prev = this._previousState;
-        const curr = this._currentState;
-
-        const metersPerDegree = 111111;
-
-        // Calculate position differences
-        const cosLat = Math.cos(curr.position.lat * Math.PI / 180);
-        const dx = (curr.position.lng - prev.position.lng) * cosLat * metersPerDegree;
-        const dy = (curr.position.lat - prev.position.lat) * metersPerDegree;
-        const dz = curr.position.altitude - prev.position.altitude;
-
-        // Calculate instantaneous velocities
-        const vx = dx / deltaTime;
-        const vy = dy / deltaTime;
-        const vz = dz / deltaTime;
-
-        // Calculate angular differences
-        const dHeading = this._shortestAngleDifference(prev.attitude.heading, curr.attitude.heading);
-        const dPitch = curr.attitude.pitch - prev.attitude.pitch;
-        const dRoll = curr.attitude.roll - prev.attitude.roll;
-
-        // Calculate angular velocities
-        const angularVelocityHeading = dHeading / deltaTime;
-        const angularVelocityPitch = dPitch / deltaTime;
-        const angularVelocityRoll = dRoll / deltaTime;
-
-        // Apply smoothing
-        // Increase the smoothing factor to add more precision
-        const predictionSmoothingFactor = 0.3;
-
-        // Smooth linear velocities
-        this._velocitySmoothed.x = this._velocitySmoothed.x + (vx - this._velocitySmoothed.x) * predictionSmoothingFactor;
-        this._velocitySmoothed.y = this._velocitySmoothed.y + (vy - this._velocitySmoothed.y) * predictionSmoothingFactor;
-        this._velocitySmoothed.z = this._velocitySmoothed.z + (vz - this._velocitySmoothed.z) * predictionSmoothingFactor;
-
-        // Smooth angular velocities
-        this._angularVelocitySmoothed.heading = this._angularVelocitySmoothed.heading + (angularVelocityHeading - this._angularVelocitySmoothed.heading) * predictionSmoothingFactor;
-        this._angularVelocitySmoothed.pitch = this._angularVelocitySmoothed.pitch + (angularVelocityPitch - this._angularVelocitySmoothed.pitch) * predictionSmoothingFactor;
-        this._angularVelocitySmoothed.roll = this._angularVelocitySmoothed.roll + (angularVelocityRoll - this._angularVelocitySmoothed.roll) * predictionSmoothingFactor;
-    }
-
     /**
      * Calculate chase camera offset based on flight velocity
      */
@@ -528,16 +604,6 @@ export class FlightMotionControl implements IControl {
     }
 
     /**
-     * Calculate shortest angle difference
-     */
-    _shortestAngleDifference(angle1: number, angle2: number): number {
-        let diff = angle2 - angle1;
-        while (diff > 180) diff = diff - 360;
-        while (diff < -180) diff = diff + 360;
-        return diff;
-    }
-
-    /**
      * Sets the camera mode
      */
     setCameraMode(mode: CameraMode): void {
@@ -552,14 +618,18 @@ export class FlightMotionControl implements IControl {
         } else if (mode.type === 'ORBIT' && !mode.offset) {
             this._cameraMode.offset = { x: 0, y: -100, z: 50 };
         }
+    }
 
-        if (this._currentState) {
-            this._updateCameraFromState();
-        }
+    startPrediction(): void {
+        this.predict = true;
+    }
+
+    stopPrediction(): void {
+        this.predict = false;
+        this._deltaIsCalculated = false;
     }
 
     getState(): MotionState | null {
         return this._currentState ? { ...this._currentState } : null;
     }
 }
-

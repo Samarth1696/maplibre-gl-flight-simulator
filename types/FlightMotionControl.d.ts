@@ -14,7 +14,6 @@ interface MotionState {
         groundSpeed: number;
         verticalSpeed: number;
     };
-    lastUpdateTime: number;
 }
 interface CameraMode {
     type: 'COCKPIT' | 'CHASE' | 'ORBIT' | 'FREE';
@@ -29,24 +28,48 @@ interface CameraMode {
         roll: number;
     };
 }
+interface MovementInterpolation {
+    start: MotionState;
+    target: MotionState;
+    remainingFrames: number;
+    deltas: {
+        lat: number;
+        lng: number;
+        altitude: number;
+        heading: number;
+        pitch: number;
+        roll: number;
+        groundSpeed: number;
+        verticalSpeed: number;
+    };
+}
 export declare class FlightMotionControl implements IControl {
-    now: any;
     _map: Map;
     _container: HTMLElement;
+    _updateInterval: number | null;
     _currentState: MotionState | null;
     _previousState: MotionState | null;
-    _frameId: number | null;
-    _cameraMode: CameraMode;
-    _velocitySmoothed: {
+    _currentInterpolation: MovementInterpolation | null;
+    _lastUpdateTime: number;
+    _disposed: boolean;
+    predict: boolean;
+    shouldPredict: boolean;
+    _deltaIsCalculated: boolean;
+    _currentDeltaTimeForPrediction: number;
+    private readonly FRAMES;
+    private FRAME_INTERVAL;
+    _velocity: {
         x: number;
         y: number;
         z: number;
     };
-    _angularVelocitySmoothed: {
+    _angularVelocity: {
         heading: number;
         pitch: number;
         roll: number;
     };
+    _cameraMode: CameraMode;
+    private readonly _boundUpdateFrame;
     constructor(options?: {
         initialPosition?: {
             lat: number;
@@ -54,11 +77,14 @@ export declare class FlightMotionControl implements IControl {
             altitude: number;
         };
         cameraMode?: CameraMode;
+        predict?: boolean;
     });
     onAdd(map: Map): HTMLElement;
     onRemove(): void;
+    _dispose(): void;
     _startUpdate(): void;
     _stopUpdate(): void;
+    _updateFrame(): void;
     updateFlightState(state: {
         lat?: number;
         lng?: number;
@@ -69,8 +95,12 @@ export declare class FlightMotionControl implements IControl {
         pitchAttitude?: number;
         rollAttitude?: number;
     }): void;
-    _updateCameraFromState(): void;
+    _updateMotionDerivatives(deltaTime: number): void;
+    private _interpolateFrame;
+    _updateCamera(): void;
     _predictCurrentState(deltaTime: number): MotionState;
+    _calculateShortestAngleDelta(start: number, end: number): number;
+    _calculateShortestLongitudeDelta(start: number, end: number): number;
     /**
      * Calculate relative camera position based on current mode and flight state
      */
@@ -85,7 +115,6 @@ export declare class FlightMotionControl implements IControl {
      * Calculate offset position based on bearing and distance
      */
     _offsetPosition(lat: number, lng: number, bearing: number, offsetX: number, offsetY: number): LngLat;
-    _updateMotionDerivatives(deltaTime: number): void;
     /**
      * Calculate chase camera offset based on flight velocity
      */
@@ -107,13 +136,11 @@ export declare class FlightMotionControl implements IControl {
      */
     _calculatePitchToPoint(fromLat: number, fromLng: number, fromAlt: number, toLat: number, toLng: number, toAlt: number): number;
     /**
-     * Calculate shortest angle difference
-     */
-    _shortestAngleDifference(angle1: number, angle2: number): number;
-    /**
      * Sets the camera mode
      */
     setCameraMode(mode: CameraMode): void;
+    startPrediction(): void;
+    stopPrediction(): void;
     getState(): MotionState | null;
 }
 export {};
