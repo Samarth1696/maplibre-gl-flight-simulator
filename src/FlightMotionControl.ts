@@ -71,8 +71,8 @@ export class FlightMotionControl implements IControl {
     _currentDeltaTimeForPrediction: number;
 
     // Fixed frames configuration
-    private readonly FRAMES = 40;
-    private FRAME_INTERVAL = 100; // default 100ms
+    private readonly FRAMES = 20;
+    private FRAME_INTERVAL = 16; // 16ms
 
     _velocity = { x: 0, y: 0, z: 0 };
     _angularVelocity = { heading: 0, pitch: 0, roll: 0 };
@@ -208,7 +208,6 @@ export class FlightMotionControl implements IControl {
         rollAttitude?: number;
     }): void {
         const deltaTime = performance.now() - this._lastUpdateTime;
-        this.FRAME_INTERVAL = deltaTime;
 
         this._previousState = this._currentState;
         // If no current state exists, initialize it
