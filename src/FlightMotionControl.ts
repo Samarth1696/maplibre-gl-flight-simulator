@@ -208,6 +208,7 @@ export class FlightMotionControl implements IControl {
         rollAttitude?: number;
     }): void {
         const deltaTime = performance.now() - this._lastUpdateTime;
+        this._lastUpdateTime = performance.now();
 
         this._previousState = this._currentState;
         // If no current state exists, initialize it
@@ -355,7 +356,7 @@ export class FlightMotionControl implements IControl {
 
         if (this.predict && this._previousState) {
             if(!this._deltaIsCalculated) {
-                this._currentDeltaTimeForPrediction = performance.now() - this._lastUpdateTime; 
+                this._currentDeltaTimeForPrediction = performance.now() - this._lastUpdateTime;
                 this._deltaIsCalculated = true;
             }
 
