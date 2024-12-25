@@ -71,7 +71,7 @@ export class FlightMotionControl implements IControl {
     _currentDeltaTimeForPrediction: number;
 
     // Fixed frames configuration
-    private readonly FRAMES = 20;
+    private readonly FRAMES = 60;
     private FRAME_INTERVAL = 16; // 16ms
 
     _velocity = { x: 0, y: 0, z: 0 };
@@ -251,7 +251,8 @@ export class FlightMotionControl implements IControl {
         };
 
         // Calculate total frames for interpolation
-        const frames = Math.round((deltaTime / 1000) * this.FRAMES);
+        let frames = Math.round((deltaTime / 1000) * this.FRAMES);
+        frames = Math.max(frames, 3);
 
         // Pre-calculate deltas per frame
         const deltas = {
