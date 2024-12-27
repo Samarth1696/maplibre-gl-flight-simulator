@@ -377,10 +377,6 @@ export class FlightMotionControl implements IControl {
             camPos, camAlt, heading, pitch, roll
         );
         this._map.jumpTo(jumpToOptions);
-
-        if(this.predict) {
-            this._updateCamera();
-        }
     }
 
     _predictCurrentState(deltaTime: number): MotionState {
