@@ -87,7 +87,9 @@ export class FlightMotionControl implements IControl {
     _angularVelocity = { heading: 0, pitch: 0, roll: 0 }; // deg/s
 
     // Config
-    private readonly FRAMES = 60; // number of interpolation frames to break transitions
+    private readonly FRAMES: number; // number of interpolation frames to break transitions
+    private readonly MINIMUM_FRAMES: number;
+
     _cameraMode: CameraMode = {
         type: 'COCKPIT',
         offset: { x: 0, y: -30, z: 10 },
@@ -105,7 +107,12 @@ export class FlightMotionControl implements IControl {
         };
         cameraMode?: CameraMode;
         predict?: boolean;
+        minimumFrames?: number; // User configurable minimum frames
+        frames?: number;       // User configurable number of interpolation frames
     } = {}) {
+        this.MINIMUM_FRAMES = options.minimumFrames ?? 3; // Default to 3
+        this.FRAMES = options.frames ?? 60;            // Default to 60
+
         // Bind loop callback
         this._boundUpdateFrame = this._updateFrame.bind(this);
         this._lastUpdateTime = performance.now();
@@ -277,7 +284,7 @@ export class FlightMotionControl implements IControl {
 
         // Number of frames over which to interpolate
         let frames = Math.round((deltaTime / 1000) * this.FRAMES);
-        frames = Math.max(frames, 3);
+        frames = Math.max(frames, this.MINIMUM_FRAMES);
 
         // Pre-calculate deltas
         const deltas = {
